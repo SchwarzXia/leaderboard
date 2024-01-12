@@ -1,7 +1,7 @@
 import gc
 import time
 
-from diffusers import AutoPipelineForText2Image
+from diffusers import AutoPipelineForText2Image, DiffusionPipeline
 import numpy as np
 import torch
 import tyro
@@ -18,7 +18,14 @@ OUTPUT_FILE = "results.csv"
 
 
 def get_pipeline(model, device=DEVICE, weight_dtype=WEIGHT_DTYPE):
-    AutoPipelineForText2Image.from_pretrained(model, torch_dtype=weight_dtype, safety_checker = None).to(device)
+    try:
+        return AutoPipelineForText2Image.from_pretrained(model, 
+                                                         torch_dtype=weight_dtype, 
+                                                         safety_checker = None).to(device)
+    except ValueError:
+        return DiffusionPipeline.from_pretrained(model,
+                                                 torch_dtype=weight_dtype, 
+                                                 safety_checker = None).to(device)
     
 def gpu_warmup(model):
     """Warm up the GPU by running the given model for 10 secs."""
@@ -28,7 +35,7 @@ def gpu_warmup(model):
     pipeline = get_pipeline(model)
     timeout_start = time.time()
     while time.time() < timeout_start + 10:
-        prompts = load_prompts(10, 10, int(time.time()))
+        prompts, _ = load_prompts(1, 1, int(time.time()))
         _ = pipeline(prompts, num_images_per_prompt=10, generator=generator, output_type="numpy").images
     logger.info("Finished warming up GPU")
 

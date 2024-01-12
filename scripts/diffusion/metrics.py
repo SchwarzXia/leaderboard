@@ -25,7 +25,7 @@ def load_prompts(num_prompts, batch_size, seed):
         num_prompts = len(prompts)
     else:
         prompts = prompts.shuffle(seed=seed)
-    prompts = [prompt["Prompt"] for prompt in prompts[:num_prompts]]
+    prompts = prompts[:num_prompts]["Prompt"]
     return prompts, [prompts[i:i + batch_size] for i in range(0, len(prompts), batch_size)]
 
 def calculate_clip_score(images, prompts):
