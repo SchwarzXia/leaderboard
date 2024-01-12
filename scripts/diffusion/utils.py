@@ -1,5 +1,6 @@
-import sys, csv
+import csv
 import logging
+import sys
 
 def get_logger(
     level: int = logging.INFO,
@@ -25,30 +26,21 @@ class CsvHandler:
         self.file = None
 
     def open_file(self):
-        try:
-            self.file = open(self.file_name, mode='a', newline='\n', encoding='utf-8')
-            self.csv_writer = csv.writer(self.file)
+        self.file = open(self.file_name, mode='a', newline='\n', encoding='utf-8')
+        self.csv_writer = csv.writer(self.file)
 
-            if self.header:
-                self.csv_writer.writerow(self.header)
+        if self.header:
+            self.csv_writer.writerow(self.header)
 
-            print(f"File '{self.file_name}' opened successfully for writing.")
-        except Exception as e:
-            print(f"Error opening file '{self.file_name}': {e}")
+        print(f"File '{self.file_name}' opened successfully for writing.")
 
     def write_row(self, data):
-        try:
-            self.csv_writer.writerow(data)
-        except Exception as e:
-            print(f"Error writing to file '{self.file_name}': {e}")
+        self.csv_writer.writerow(data)
 
     def close_file(self):
-        try:
-            if self.file:
-                self.file.close()
-                print(f"File '{self.file_name}' closed successfully.")
-        except Exception as e:
-            print(f"Error closing file '{self.file_name}': {e}")
+        if self.file:
+            self.file.close()
+            print(f"File '{self.file_name}' closed successfully.")
 
     def write_header(self, data):
         self.open_file()

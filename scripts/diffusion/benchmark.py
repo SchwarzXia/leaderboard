@@ -1,9 +1,14 @@
-import torch, gc, tyro
+import gc
+import time
+
+from diffusers import AutoPipelineForText2Image
 import numpy as np
-from diffusers import DiffusionPipeline, AutoPipelineForText2Image
+import torch
+import tyro
 from zeus.monitor import ZeusMonitor
+
 from utils import get_logger, CsvHandler
-from metrics import *
+from metrics import load_prompts, calculate_clip_score
 
 # default parameters
 DEVICE = "cuda"
@@ -12,26 +17,27 @@ SEED = 0
 OUTPUT_FILE = "results.csv"
 
 
-def get_pipeline(model, pipeline=DiffusionPipeline, device=DEVICE, weight_dtype=WEIGHT_DTYPE):
-    try:
-        return AutoPipelineForText2Image.from_pretrained(model, torch_dtype=weight_dtype, safety_checker = None).to(device)
-    except:
-        return pipeline.from_pretrained(model, torch_dtype=weight_dtype, safety_checker = None).to(device)
+def get_pipeline(model, device=DEVICE, weight_dtype=WEIGHT_DTYPE):
+    AutoPipelineForText2Image.from_pretrained(model, torch_dtype=weight_dtype, safety_checker = None).to(device)
     
-def gpu_warmup():
+def gpu_warmup(model):
+    """Warm up the GPU by running the given model for 10 secs."""
     logger = get_logger()
     logger.info("Warming up GPU")
     generator = torch.manual_seed(2)
-    pipeline = get_pipeline("runwayml/stable-diffusion-v1-5")
-    prompts = load_prompts_clip(10)
-    _ = pipeline(prompts, num_images_per_prompt=10, generator=generator, output_type="numpy").images
+    pipeline = get_pipeline(model)
+    timeout_start = time.time()
+    while time.time() < timeout_start + 10:
+        prompts = load_prompts(10, 10, int(time.time()))
+        _ = pipeline(prompts, num_images_per_prompt=10, generator=generator, output_type="numpy").images
+    logger.info("Finished warming up GPU")
 
 
 
 
 def benchmark(
         model: str,
-        prompt_size: int = 0,
+        benchmark_size: int = 0,
         batch_size: int = 1,
         output_file: str = OUTPUT_FILE,
         device: str = DEVICE,
@@ -41,8 +47,26 @@ def benchmark(
         warmup: bool = False,
         settings: dict = {}
 ) -> None:
-    """
-        Main benchmark script.
+    """Benchmarks given model with a set of parameters.
+
+    Args:
+        model: The name of the model to benchmark, as shown on HuggingFace.
+        benchmark_size: The number of prompts to benchmark on. If 0, benchmarks
+          the entire parti-prompts dataset.
+        batch_size: The size of each batch of prompts. When benchmarking, the
+          prompts are split into batches of this size, and prompts are fed into
+          the model in batches.
+        output_file: The path to the output csv file.
+        device: The device to run the benchmark on.
+        seed: The seed to use for the RNG.
+        weight_dtype: The weight dtype to use for the model.
+        write_header: Whether to write the header row to the output csv file,
+          recommended to be True for the first run.
+        warmup: Whether to warm up the GPU before running the benchmark, 
+          recommended to be True for the first run of a model.
+        settings: Any additional settings to pass to the pipeline, supports
+          any keyword parameters accepted by the model chosen. See HuggingFace
+          documentation on particular models for more details.
     """
     logger = get_logger()
     logger.info("Running benchmark for model: " + model)
@@ -51,15 +75,15 @@ def benchmark(
     if write_header:
         csv_handler.write_header(
             ["model", "GPU", "image_num", "batch_size", "clip_score", "avg_latency(s)", "avg_energy(J)", "peak_memory(GB)"])
-
-    prompts, batched_prompts = load_prompts_clip(prompt_size, batch_size, seed)
+    
+    prompts, batched_prompts = load_prompts(benchmark_size, batch_size, seed)
     logger.info("Loaded prompts")
 
     if warmup:
-        gpu_warmup()
+        gpu_warmup(model)
 
     generator = torch.manual_seed(seed)
-    monitor = ZeusMonitor(gpu_indices=[torch.cuda.current_device()])
+    monitor = ZeusMonitor(gpu_indices=[torch.tensor(0,device=device).get_device()])
     pipeline = get_pipeline(model, device=device, weight_dtype=weight_dtype)
 
     torch.cuda.empty_cache()
@@ -80,13 +104,13 @@ def benchmark(
 
     result = {
         'model' : model,
-        'GPU' : torch.cuda.get_device_name(torch.cuda.current_device()),
-        'image_num' : prompt_size,
+        'GPU' : torch.cuda.get_device_name(device),
+        'image_num' : benchmark_size,
         'batch_size' : batch_size,
         'clip_score' : clip_score,
-        'avg_latency' : round(result_monitor.time/prompt_size, 2),
-        'avg_energy' : round(result_monitor.total_energy/prompt_size, 2),
-        'peak_memory' : round(peak_memory/1024/1024/1024, 4)
+        'avg_latency' : result_monitor.time/benchmark_size,
+        'avg_energy' : result_monitor.total_energy/benchmark_size,
+        'peak_memory' : peak_memory/1024/1024/1024,
     }
 
     logger.info("Results for model " + model + ":")

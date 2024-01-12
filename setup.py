@@ -11,7 +11,8 @@ extras_require = {
         "gradio==3.39.0",
         "text_generation @ git+https://github.com/ml-energy/text_generation_energy@master",
     ],
-    "benchmark": ["zeus-ml", "fschat==0.2.23", "torch==2.0.1", "tyro", "rich"],
+    "benchmark": ["zeus-ml", "fschat==0.2.23", "torch==2.0.1", "tyro", "rich",
+                  "datasets", "diffusers", "transformers", "accelerate", "torchmetrics[image]"],
     "dev": ["pytest"],
 }
 

@@ -30,11 +30,6 @@ RUN cd /workspace \
       && rm -r .git \
       && pip install -e .
 
-# Install dependencies for diffusers
-RUN cd /workspace/leaderboard
-# RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-RUN pip install datasets diffusers transformers accelerate torchmetrics[image] zeus-ml tyro
-
 # Apply patches
 # Salesforce xgen inference fix (https://github.com/lm-sys/FastChat/pull/2350)
 RUN cd /root/.local/miniconda3/lib/python3.9/site-packages \
