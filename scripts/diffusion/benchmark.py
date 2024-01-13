@@ -13,7 +13,7 @@ from utils import get_logger, CsvHandler
 from metrics import load_prompts, calculate_clip_score
 
 # default parameters
-DEVICE = "cuda"
+DEVICE = "cuda:0"
 WEIGHT_DTYPE = torch.float16
 SEED = 0
 OUTPUT_FILE = "results.csv"
@@ -22,14 +22,15 @@ OUTPUT_IMAGES = "images/"
 
 def get_pipeline(model, device=DEVICE, weight_dtype=WEIGHT_DTYPE):
     try:
-        return AutoPipelineForText2Image.from_pretrained(model, 
-                                                         torch_dtype=weight_dtype, 
-                                                         safety_checker = None).to(device)
+        return AutoPipelineForText2Image.from_pretrained(
+            model, torch_dtype=weight_dtype, safety_checker=None
+        ).to(device)
     except ValueError:
-        return DiffusionPipeline.from_pretrained(model,
-                                                 torch_dtype=weight_dtype, 
-                                                 safety_checker = None).to(device)
-    
+        return DiffusionPipeline.from_pretrained(
+            model, torch_dtype=weight_dtype, safety_checker=None
+        ).to(device)
+
+
 def gpu_warmup(pipeline):
     """Warm up the GPU by running the given pipeline for 10 secs."""
     logger = get_logger()
@@ -38,24 +39,24 @@ def gpu_warmup(pipeline):
     timeout_start = time.time()
     prompts, _ = load_prompts(1, 1)
     while time.time() < timeout_start + 10:
-        _ = pipeline(prompts, num_images_per_prompt=10, generator=generator, output_type="numpy").images
+        _ = pipeline(
+            prompts, num_images_per_prompt=10, generator=generator, output_type="numpy"
+        ).images
     logger.info("Finished warming up GPU")
 
 
-
-
 def benchmark(
-        model: str,
-        benchmark_size: int = 0,
-        batch_size: int = 1,
-        result_file: str = OUTPUT_FILE,
-        images_path: str = OUTPUT_IMAGES,
-        device: str = DEVICE,
-        seed: int = SEED, 
-        weight_dtype: torch.dtype = WEIGHT_DTYPE,
-        write_header: bool = False,
-        warmup: bool = False,
-        settings: dict = {}
+    model: str,
+    benchmark_size: int = 0,
+    batch_size: int = 1,
+    result_file: str = OUTPUT_FILE,
+    images_path: str = OUTPUT_IMAGES,
+    device: str = DEVICE,
+    seed: int = SEED,
+    weight_dtype: torch.dtype = WEIGHT_DTYPE,
+    write_header: bool = False,
+    warmup: bool = False,
+    settings: dict = {},
 ) -> None:
     """Benchmarks given model with a set of parameters.
 
@@ -73,7 +74,7 @@ def benchmark(
         weight_dtype: The weight dtype to use for the model.
         write_header: Whether to write the header row to the output csv file,
           recommended to be True for the first run.
-        warmup: Whether to warm up the GPU before running the benchmark, 
+        warmup: Whether to warm up the GPU before running the benchmark,
           recommended to be True for the first run of a model.
         settings: Any additional settings to pass to the pipeline, supports
           any keyword parameters accepted by the model chosen. See HuggingFace
@@ -85,9 +86,19 @@ def benchmark(
     csv_handler = CsvHandler(result_file)
     if write_header:
         csv_handler.write_header(
-            ["model", "GPU", "num_prompts", "batch_size", "clip_score", "average_batch_latency(s)",
-              "throughput(image/s)", "avg_energy(J)", "peak_memory(GB)"])
-        
+            [
+                "model",
+                "GPU",
+                "num_prompts",
+                "batch_size",
+                "clip_score",
+                "average_batch_latency(s)",
+                "throughput(image/s)",
+                "avg_energy(J)",
+                "peak_memory(GB)",
+            ]
+        )
+
     set_seed(seed)
     prompts, batched_prompts = load_prompts(benchmark_size, batch_size)
     logger.info("Loaded prompts")
@@ -107,7 +118,9 @@ def benchmark(
     monitor.begin_window("generate")
     images = []
     for batch in batched_prompts:
-        image = pipeline(batch, generator=generator, output_type="np", **settings).images
+        image = pipeline(
+            batch, generator=generator, output_type="np", **settings
+        ).images
         images.append(image)
     images = np.concatenate(images)
     result_monitor = monitor.end_window("generate")
@@ -115,20 +128,21 @@ def benchmark(
     peak_memory = torch.cuda.max_memory_allocated(device=device)
 
     for saved_image, saved_prompt in zip(images[::10], prompts[::10]):
+        saved_image = (saved_image * 255).astype(np.uint8)
         Image.fromarray(saved_image).save(images_path + saved_prompt + ".png")
 
     clip_score = calculate_clip_score(images, prompts)
 
     result = {
-        'model' : model,
-        'GPU' : torch.cuda.get_device_name(device),
-        'num_prompts' : len(prompts),
-        'batch_size' : batch_size,
-        'clip_score' : clip_score,
-        'avg_batch_latency' : result_monitor.time/(benchmark_size/batch_size),
-        'throughput' : benchmark_size/result_monitor.time,
-        'avg_energy' : result_monitor.total_energy/benchmark_size,
-        'peak_memory' : peak_memory,
+        "model": model,
+        "GPU": torch.cuda.get_device_name(device),
+        "num_prompts": len(prompts),
+        "batch_size": batch_size,
+        "clip_score": clip_score,
+        "avg_batch_latency": result_monitor.time / (benchmark_size / batch_size),
+        "throughput": benchmark_size / result_monitor.time,
+        "avg_energy": result_monitor.total_energy / benchmark_size,
+        "peak_memory": peak_memory,
     }
 
     logger.info("Results for model " + model + ":")
