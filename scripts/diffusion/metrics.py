@@ -4,15 +4,13 @@ from datasets import load_dataset
 import torch
 from torchmetrics.functional.multimodal import clip_score
 
-def load_prompts(num_prompts, batch_size, seed):
+def load_prompts(num_prompts, batch_size):
     """Generate prompts for CLIP Score metric.
     
     Args:
         num_prompts (int): number of prompts to generate.
             If num_prompts == 0, returns all prompts instead.
         batch_size (int): batch size for prompts
-        seed (int): seed for the RNG used to shuffle prompts,
-            ignored if num_prompts == 0
     
     Returns:
         A tuple (prompts, batched_prompts) where prompts is a list of prompts
@@ -24,9 +22,13 @@ def load_prompts(num_prompts, batch_size, seed):
     if num_prompts == 0:
         num_prompts = len(prompts)
     else:
-        prompts = prompts.shuffle(seed=seed)
+        prompts = prompts.shuffle()
     prompts = prompts[:num_prompts]["Prompt"]
-    return prompts, [prompts[i:i + batch_size] for i in range(0, len(prompts), batch_size)]
+    batched_prompts = [prompts[i:i + batch_size] for i in range(0, len(prompts), batch_size)]
+    if len(batched_prompts[-1]) < batch_size:
+        batched_prompts = batched_prompts[:-1]
+    prompts = [prompt for batch in batched_prompts for prompt in batch]
+    return prompts, batched_prompts
 
 def calculate_clip_score(images, prompts):
     """Calculate CLIP Score metric. 
